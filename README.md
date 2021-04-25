@@ -40,7 +40,7 @@ Ping-prober是分布式的网络质量监控解决方案，用于探测公有云
 - [Grafana](https://github.com/grafana/grafana)：UI展示；
 - [Ping exporter](https://github.com/zbd20/ping-exporter)：Ping指标探测和暴露；
 - [Ping probe register](https://github.com/zbd20/ping-probe-register)：自研组件，实现探针的自动注册和注销；
-- [Ping monitor config generator](https://github.com/zbd20/ping-monitor-config-generator)：自研组件，Watch Consul Services的变化并生成Prometheus的配置文件。
+- [Ping prober config generator](https://github.com/zbd20/ping-prober-config-generator)：自研组件，Watch Consul Services的变化并生成Prometheus的配置文件。
 
 
 
