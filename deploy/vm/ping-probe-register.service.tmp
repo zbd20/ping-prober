@@ -1,0 +1,16 @@
+[Unit]
+Description=ping-probe-register
+After=network.target
+[Service]
+Type=simple
+User=root
+After=ping-exporter.service
+Environment="POD_NAME=${POD_NAME}"
+Environment="POD_IP=${POD_IP}"
+Environment="REGION=${REGION}"
+Environment="VPC=${VPC}"
+Environment="ACCOUNT=${ACCOUNT}"
+ExecStart=/App/ping-prober/ping-probe-register --config=/App/ping-prober/ping-probe-register-cfg.yaml
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=ping_exporter
+After=network.target
+[Service]
+Type=simple
+User=root
+ExecStart=/App/ping-prober/ping-exporter
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

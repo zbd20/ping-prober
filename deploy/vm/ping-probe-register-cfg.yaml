@@ -1,0 +1,4 @@
+port: 9347
+consul:
+  address: MyConsul:8500
+  scheme: http
