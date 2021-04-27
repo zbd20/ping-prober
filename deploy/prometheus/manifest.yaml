@@ -1,0 +1,207 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: ping-monitor-agent
+  name: ping-monitor-agent-tpl
+  namespace: base
+data:
+  prometheus.yml.tpl: |-
+    {{ key "network-monitor/prometheus/ping-probe.yml" }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-consul-template-config
+  namespace: base
+data:
+  consul-template.conf: |
+    consul {
+      address = "127.0.0.1:8500"
+      ssl {
+        enabled = false
+        verify = false
+      }
+    }
+
+    pid_file = "/tmp/consul-template.pid"
+    log_level = "DEBUG"
+
+    template {
+      source = "/consul-template/tpl/prometheus.yml.tpl"
+      destination = "/consul-template/data/prometheus.yml"
+      command = "wget --post-data='post=true' http://127.0.0.1:9090/-/reload -O /dev/null"
+    }
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app: ping-monitor-agent
+  name: ping-monitor-agent
+  namespace: base
+spec:
+  serviceName: ping-monitor-agent
+  selector:
+    matchLabels:
+      app: ping-monitor-agent
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: ping-monitor-agent
+    spec:
+      nodeSelector:
+        group: landing
+      tolerations:
+      - effect: NoExecute
+        key: app
+        operator: Exists
+      containers:
+      - args:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/data/prometheus
+        - --storage.tsdb.min-block-duration=15m
+        - --storage.tsdb.max-block-duration=15m
+        - --web.enable-lifecycle
+        image: prom/prometheus:v2.22.2
+        imagePullPolicy: IfNotPresent
+        name: prometheus
+        ports:
+        - containerPort: 9090
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 9090
+          initialDelaySeconds: 30
+          timeoutSeconds: 30
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: 9090
+          initialDelaySeconds: 30
+          timeoutSeconds: 30
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+          requests:
+            cpu: "2"
+            memory: 4Gi
+        volumeMounts:
+        - mountPath: /etc/prometheus
+          name: prometheus-config
+        - mountPath: /data
+          name: ping-monitor-agent
+      - name: consul-client
+        image: consul:1.9.3
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: GOSSIP_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: consul
+              key: gossip-encryption-key
+        args:
+        - agent
+        - -advertise=$(POD_IP)
+        - -config-file=/etc/consul/config/client.json
+        - -encrypt=$(GOSSIP_ENCRYPTION_KEY)
+        volumeMounts:
+        - name: consul-data
+          mountPath: /consul/data
+        - name: consul-config
+          mountPath: /etc/consul/config
+        - name: tls
+          mountPath: /etc/tls
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - consul leave
+        resources:
+          limits:
+            cpu: 256m
+            memory: 512Mi
+          requests:
+            cpu: 256m
+            memory: 512Mi
+      - name: consul-template
+        imagePullPolicy: IfNotPresent
+        image: hashicorp/consul-template:0.25.2-light
+        args:
+        - -config=/consul-template/config/consul-template.conf
+        volumeMounts:
+        - mountPath: /consul-template/config
+          name: prometheus-consul-template-config
+        - mountPath: /consul-template/tpl
+          name: ping-monitor-agent-tpl
+          readOnly: true
+        - mountPath: /consul-template/data
+          name: prometheus-config
+        resources:
+          limits:
+            cpu: 256m
+            memory: 512Mi
+          requests:
+            cpu: 256m
+            memory: 512Mi
+      restartPolicy: Always
+      volumes:
+      - name: prometheus-config
+        emptyDir: {}
+      - name: ping-monitor-agent-tpl
+        configMap:
+          name: ping-monitor-agent-tpl
+      - name: consul-config
+        configMap:
+          name: consul
+      - name: tls
+        secret:
+          secretName: consul
+      - name: consul-data
+        emptyDir: {}
+      - configMap:
+          name: prometheus-consul-template-config
+        name: prometheus-consul-template-config
+  volumeClaimTemplates:
+  - metadata:
+      name: ping-monitor-agent
+      namespace: base
+      annotations:
+        everest.io/disk-volume-type: SAS
+        volume.beta.kubernetes.io/cce-storage-additional-resource-tags: env=prod,group=SGT,project=landing
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+      storageClassName: csi-disk-topology
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: ping-monitor-agent
+  name: ping-monitor-agent
+  namespace: base
+spec:
+  ports:
+  - name: http
+    port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: ping-monitor-agent
+  type: ClusterIP

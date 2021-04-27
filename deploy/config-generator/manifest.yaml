@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: ping-monitor-config-generator
+  name: ping-monitor-config-generator-cm
+  namespace: base
+data:
+  config.prod.yaml: |-
+    consul:
+      address: MyConsul:8500
+      scheme: http
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ping-monitor-config-generator
+  namespace: base
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ping-monitor-config-generator
+  template:
+    metadata:
+      labels:
+        app: ping-monitor-config-generator
+    spec:
+      containers:
+      - image: zbd20/ping-prober-config-generator:v0.0.1
+        name: ping-monitor-config-generator
+        volumeMounts:
+        - mountPath: /etc/config
+          name: config
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        imagePullPolicy: IfNotPresent
+      volumes:
+      - name: config
+        configMap:
+          name: ping-monitor-config-generator-cm
